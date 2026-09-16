@@ -96,10 +96,10 @@ The goal is a reusable foundation: the same ESP32, ROS 2, and Foxglove pattern s
 ## Repo Structure (suggested)
 
 ```
-/firmware        # ESP32 source (motor control, ROS 2 node, sensor drivers as added)
-/ros2_ws          # ROS 2 packages run on the Steam Deck / host
-/docs             # Wiring diagrams, pinouts, photos
-/hardware         # CAD/STL files, BOM
+/firmware   # ESP32 source (motor control, ROS 2 node, sensor drivers as added)
+/ros2_ws    # ROS 2 packages run on the Steam Deck / host
+/docs       # Wiring diagrams, pinouts, photos
+/hardware   # CAD/STL files, BOM
 README.md
 ```
 
