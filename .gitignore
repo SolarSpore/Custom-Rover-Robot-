@@ -1,0 +1,16 @@
+# ROS 2 / colcon build artifacts
+ros2_ws/build/
+ros2_ws/install/
+ros2_ws/log/
+
+# Python
+__pycache__/
+*.pyc
+
+# PlatformIO (if firmware source is added to this repo later)
+.pio/
+.vscode/
+
+# OS/editor cruft
+.DS_Store
+*.swp
