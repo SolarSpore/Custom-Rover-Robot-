@@ -1,0 +1,27 @@
+#pragma once
+
+// ------------------------------------------------------------------
+// config.h.example
+//
+// Copy this file to config.h and fill in real values. config.h is
+// gitignored so your Wi-Fi credentials and OTA password never end up
+// in version control.
+//
+//   cp config.h.example config.h
+// ------------------------------------------------------------------
+
+// Home Wi-Fi network the rover tries first.
+const char* sta_ssid     = "YOUR_WIFI_SSID";
+const char* sta_password = "YOUR_WIFI_PASSWORD";
+
+// Fallback access point, started if the home network is unreachable
+// at boot.
+const char* ap_ssid     = "ESP32-Rover";
+const char* ap_password = "CHOOSE_AN_AP_PASSWORD"; // 8+ characters required
+
+// mDNS / OTA hostname -> shows up as <mdnsHostname>.local
+const char* mdnsHostname = "esp32rover";
+
+// OTA password. Must match the --auth value in platformio.ini's
+// esp32dev-ota environment.
+const char* ota_password = "YOUR_OTA_PASSWORD";
