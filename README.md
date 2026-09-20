@@ -1,6 +1,6 @@
-# ESP32 4WD Rover: Modular Robotics Platform
+# ESP32 4WD Rover
 
-A Wi-Fi-connected, 4-wheel-drive rover built around an ESP32, dual L298N motor drivers, and a growing stack of ROS 2 tooling. This robot is the first hardware node in a broader modular robotics platform aimed at multi-robot control, telemetry, OTA updates, and home automation integration.
+A Wi-Fi-connected, 4-wheel-drive rover built around an ESP32 and dual L298N motor drivers. This is the first hardware node of the **Robotics Platform** (see the platform README at the repository root). This README covers the robot itself: hardware, wiring, network protocol, and firmware. The ROS 2 control side (gamepad teleop, the UDP bridge, Foxglove) is documented in the platform README.
 
 Design is loosely inspired by the classic Arduino/ESP32 obstacle-avoiding and line-tracking smartcar chassis builds, reworked around an ESP32 as the main controller and a 4-motor, dual-driver layout instead of a single H-bridge.
 
@@ -13,15 +13,13 @@ Design is loosely inspired by the classic Arduino/ESP32 obstacle-avoiding and li
 | Chassis + 4WD drivetrain | Assembled |
 | Dual L298N wiring | Wired and driving |
 | ESP32 main controller | Flashed, Wi-Fi connected |
-| ESP32 firmware (this repo) | Working: UDP motor control, OTA, failsafe stop |
-| Steam Deck to ESP32 link (ROS 2) | In progress |
-| Foxglove Studio telemetry view | In progress |
+| ESP32 firmware (this directory) | Working: UDP motor control, OTA, failsafe stop |
+| Control link from a host (UDP) | Working, driven from a Steam Deck via ROS 2 (see platform README) |
 | Head swivel (pan servo) | Not connected |
 | Ultrasonic sensors ("eyes") | Not connected |
 | IR line/obstacle sensors | Not connected |
-| Multi-robot support | Planned |
 
-This is an active work in progress. The rover currently drives (teleop-capable via UDP) but has no onboard sensing yet. Obstacle avoidance, line tracking, and the head/camera swivel from the original inspiration build are all still on the bench.
+The rover drives but has no onboard sensing yet. Obstacle avoidance, line tracking, and the head/camera swivel from the original inspiration build are all still on the bench.
 
 ---
 
@@ -30,7 +28,6 @@ This is an active work in progress. The rover currently drives (teleop-capable v
 - **Controller:** ESP32 (Wi-Fi enabled, replacing the Arduino Uno used in similar builds)
 - **Motor drivers:** 2x L298N Dual H-Bridge
 - **Drive:** 4x DC gear motors, independent front/rear left/right control
-- **Compute (off-board):** Steam Deck running Linux, ROS 2, and Foxglove Studio
 - **Not yet installed:** pan servo (head swivel), HC-SR04 ultrasonic sensors, IR sensors
 
 ### Motor Wiring
@@ -39,12 +36,20 @@ Each wheel gets its own pair of GPIOs, driven directly as PWM forward/reverse pa
 
 | Wheel | GPIO A | GPIO B | LEDC Channels |
 |---|---|---|---|
-| Front Left (FL) | 26 | 27 | 0, 1 |
-| Front Right (FR) | 18 | 19 | 2, 3 |
+| Front Left (FL) | 23 | 25 | 0, 1 |
+| Front Right (FR) | 26 | 27 | 2, 3 |
 | Rear Left (RL) | 21 | 22 | 4, 5 |
-| Rear Right (RR) | 23 | 25 | 6, 7 |
+| Rear Right (RR) | 18 | 19 | 6, 7 |
+
+This table matches how the rover is physically wired. It was verified with a one-channel-at-a-time test (each wheel driven alone over UDP), and the pin rows in `main.cpp` are ordered to match. If you rewire, re-run that test and update the pins. Which L298N board and terminals each pair lands on has not been re-verified.
 
 PWM frequency is 5000 Hz at 8-bit resolution (0-255), matching the -255..255 command range directly.
+
+### Power and motor behavior
+
+- **Charge the batteries first.** A low pack was behind most of the early "dead wheel" and flaky-channel symptoms.
+- **L298N low-speed stall.** On this build the gear motors stall below roughly PWM 80-100 (they whine without turning). Steady, consistent motion starts around PWM 100. Whatever sends commands should keep non-zero values above that range (the platform's ROS bridge does this with a `min_pwm` setting).
+- Each L298N also drops about 2 V internally, so a partly discharged pack narrows the usable range further.
 
 ---
 
@@ -54,24 +59,23 @@ PWM frequency is 5000 Hz at 8-bit resolution (0-255), matching the -255..255 com
 |---|---|
 | UDP port | `4210` |
 | UDP protocol | `"FL,FR,RL,RR"`, each value `-255..255` |
+| Failsafe | All motors stop after 500 ms without a valid packet |
 | Wi-Fi connect timeout | 8 seconds, then falls back to AP mode |
 | Fallback AP | SSID/password set in `config.h` (`ap_ssid` / `ap_password`) |
 | mDNS / OTA hostname | set in `config.h` (`mdnsHostname`), resolves as `<mdnsHostname>.local` |
 | OTA port | `3232` (ArduinoOTA default) |
 | OTA password | set in `config.h` (`ota_password`), must match `platformio.ini`'s `--auth` flag |
+| Wi-Fi power saving | Modem sleep disabled in station mode (`WiFi.setSleep(false)`) |
 
-**No static IP is configured in firmware.** The board takes whatever address your router's DHCP hands out. If you want the IP to stay stable across reboots (recommended, since OTA in `esp32dev-ota` targets a fixed IP), set a DHCP reservation on your router for the board's MAC address, printed to Serial isn't currently implemented, add `Serial.println(WiFi.macAddress())` in `setupNetwork()` if you need to read it off, or check your router's DHCP client list.
+**No static IP is configured in firmware.** The board takes whatever address your router's DHCP hands out. This rover uses a DHCP reservation on the router (currently `192.168.1.26`), which keeps the address stable across reboots. That matters because `esp32dev-ota` targets a fixed IP. To find the board's MAC for the reservation, check the router's DHCP client list, or add `Serial.println(WiFi.macAddress())` in `setupNetwork()`.
 
----
+**Why modem sleep is off:** with it enabled, ping to the ESP32 averaged about 51 ms with spikes to 235 ms, and UDP motor commands arrived in bursts (visibly jittery wheels). With it disabled, the average dropped to about 8 ms with a 28 ms worst case.
 
-## Software Stack
+### Talking to the rover
 
-- **Firmware:** ESP32, Arduino framework, built and flashed via PlatformIO (this repo)
-- **Middleware:** ROS 2 (running on the Steam Deck, communicating with the ESP32 over Wi-Fi via UDP)
-- **Visualization/telemetry:** Foxglove Studio
-- **Host OS:** Linux (Steam Deck in desktop mode)
+The firmware never runs ROS: it only speaks the UDP protocol above, and anything that can send that string can drive it. A sender should resend at a steady rate (20 Hz works well), since the failsafe stops the motors after 500 ms of silence.
 
-The firmware itself never runs ROS: it only speaks the UDP protocol above. ROS 2 integration lives on the Steam Deck side, in the `rover_udp_bridge` package, which is what Foxglove's Teleop panel and a future Nav2 stack talk to. The goal is a reusable foundation: the same ESP32 + ROS 2 + Foxglove pattern should be able to support additional robots beyond this rover, with shared tooling for control, telemetry, and updates.
+**Only one sender should transmit at a time.** A second source sending idle stop packets (for example `0,0,0,0` from a test tool) interleaves with the real commands and shows up as motor stutter.
 
 ---
 
@@ -178,6 +182,8 @@ Replace `YOUR_OTA_PASSWORD` with the real value locally (matching `ota_password`
     1. Try configured Wi-Fi network.
     2. If unavailable, start fallback access point.
     3. mDNS hostname: esp32rover.local
+    4. Wi-Fi modem sleep is disabled in station mode for steady
+       UDP latency.
 
   OTA:
     - ArduinoOTA
@@ -218,10 +224,10 @@ struct MotorPins {
 
 // FL, FR, RL, RR
 MotorPins motors[4] = {
-  {26, 27},  // FL
-  {18, 19},  // FR
+  {23, 25},  // FL
+  {26, 27},  // FR
   {21, 22},  // RL
-  {23, 25}   // RR
+  {18, 19}   // RR
 };
 
 // Each motor gets two PWM channels.
@@ -360,6 +366,11 @@ bool setupNetwork() {
   if (WiFi.status() == WL_CONNECTED) {
 
     Serial.println("Wi-Fi connected.");
+
+    // Disable modem sleep. With sleep enabled the radio naps between
+    // beacons and UDP packets arrive in delayed bursts, which shows up
+    // as jittery motors.
+    WiFi.setSleep(false);
 
     Serial.print("IP address: ");
     Serial.println(WiFi.localIP());
@@ -628,51 +639,43 @@ pio run -e esp32dev-ota -t upload
 ```
 Close any open Serial Monitor before a USB upload, an open port will cause the upload to fail.
 
+When both environments are targeted at once, PlatformIO reports each separately. If no USB cable is attached, `esp32dev` fails while `esp32dev-ota` succeeds, and the OTA result is the one that counts.
+
 ---
 
-## Project Roadmap
+## Rover Roadmap
 
-### Phase 1: Core Drivetrain (current)
+Platform-level work (control software, telemetry dashboard, MQTT/home automation, multi-robot support) is tracked in the platform README and roadmap. These items are specific to this robot.
+
+### Phase 1: Core Drivetrain (done)
 - [x] Assemble 4WD chassis
 - [x] Wire dual L298N motor drivers to ESP32
 - [x] Confirm all four wheels drive independently and correctly
 - [x] ESP32 firmware: Wi-Fi, fallback AP, mDNS, OTA, UDP motor protocol, failsafe stop
-- [ ] Establish stable Wi-Fi teleop control from Steam Deck via the ROS 2 bridge
-- [ ] Verify `cmd_vel` / Twist teleop end-to-end through Foxglove
+- [x] Stable Wi-Fi control from a host over UDP (Steam Deck via ROS 2)
 
 ### Phase 2: Sensing
 - [ ] Connect and calibrate ultrasonic sensor(s) for obstacle detection
 - [ ] Connect IR sensors for line tracking and edge detection
-- [ ] Publish sensor data as ROS 2 topics
-- [ ] Visualize live sensor data in Foxglove Studio
+- [ ] Add wheel encoders (needed for odometry)
+- [ ] Publish sensor data to the control system
 
 ### Phase 3: Autonomy Features
 - [ ] Implement obstacle avoidance behavior
 - [ ] Implement line-following mode
 - [ ] Add head swivel (pan servo) for sensor sweep and camera aiming
-- [ ] Optional: onboard camera streaming (ESP32-CAM or similar) into Foxglove
-
-### Phase 4: Platform Infrastructure
-- [ ] Config management for multiple robots on the same platform
-- [ ] Standardized ROS 2 message/topic conventions across robot types
-- [ ] Multi-robot control from a single Foxglove/ROS 2 session
-
-### Phase 5: Integration
-- [ ] Home automation integration (e.g., Home Assistant bridge)
-- [ ] Persistent logging/telemetry storage
-- [ ] Web or mobile dashboard for status and control outside of Foxglove
+- [ ] Optional: onboard camera streaming (ESP32-CAM or similar)
 
 ---
 
 ## Repo Structure
 
 ```
-.
+firmware/esp32-bot/          (this directory)
 ├── platformio.ini      # PlatformIO project config (USB + OTA envs)
 ├── config.h.example    # template for Wi-Fi/AP/OTA config, copy to config.h
 ├── src/
 │   └── main.cpp         # ESP32 firmware: UDP motor control, OTA, failsafe
-├── ros2_ws/             # ROS 2 packages run on the Steam Deck / host
 ├── docs/                # Wiring diagrams, pinouts, photos
 ├── hardware/            # CAD/STL files, BOM
 └── README.md
@@ -685,4 +688,9 @@ Close any open Serial Monitor before a USB upload, an open port will cause the u
 - Double-check ENA/ENB PWM pin assignments before wiring more peripherals. GPIO 6-11 are reserved on ESP32 (connected to onboard flash) and should be avoided.
 - When adding the ultrasonic and IR sensors, keep pin choices ADC-safe if using ADC2 pins simultaneously with Wi-Fi (ADC2 is unreliable while Wi-Fi is active on most ESP32 modules).
 - `config.h` and the real OTA `--auth` value are gitignored on purpose. If either ever gets committed by accident, rotate the OTA password and Wi-Fi credentials, don't just delete the commit.
-- Keep this README's status table updated as each roadmap item lands; it doubles as the project's changelog at a glance.
+- Keep this README's status table updated as each roadmap item lands.
+- **Lessons from bring-up:**
+  - A low battery looks like random dead wheels. Charge before debugging.
+  - Never run more than one sender to the ESP32. Competing stop packets read as motor stutter.
+  - Wi-Fi modem sleep on the ESP32 causes bursty UDP timing. Leave `WiFi.setSleep(false)` in.
+  - Test wiring changes one channel at a time over raw UDP with the rover on blocks. That is how the FL/FR/RL/RR pin order was corrected.
