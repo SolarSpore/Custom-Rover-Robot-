@@ -697,7 +697,7 @@ firmware/esp32-bot/          (this directory)
 - When adding the ultrasonic and IR sensors, keep pin choices ADC-safe if using ADC2 pins simultaneously with Wi-Fi (ADC2 is unreliable while Wi-Fi is active on most ESP32 modules).
 - `config.h` and the real OTA `--auth` value are gitignored on purpose. If either ever gets committed by accident, rotate the OTA password and Wi-Fi credentials, don't just delete the commit.
 - Keep this README's status table updated as each roadmap item lands.
-- **Lessons from bring-up:**
+- **Troubleshooting:**
   - A low battery looks like random dead wheels. Charge before debugging.
   - Never run more than one sender to the ESP32. Competing stop packets read as motor stutter.
   - Wi-Fi modem sleep on the ESP32 causes bursty UDP timing. Leave `WiFi.setSleep(false)` in.
