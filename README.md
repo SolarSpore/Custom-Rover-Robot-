@@ -1,6 +1,8 @@
 # ESP32 4WD Rover
 
-A Wi-Fi-connected, 4-wheel-drive rover built around an ESP32 and dual L298N motor drivers. This is the first hardware node of the **Robotics Platform** (see the platform README at the repository root). This README covers the robot itself: hardware, wiring, network protocol, and firmware. The ROS 2 control side (gamepad teleop, the UDP bridge, Foxglove) is documented in the platform README.
+This is my hands-on project for learning ROS 2 without spending a fortune: an ESP32 rover, driven from a Steam Deck, on parts bought a little at a time as I could afford them. It started as a plain 4WD skid-steer chassis to get the basics working (Wi-Fi, motor control, teleop over ROS 2), and I've been bolting on capability as new parts arrive rather than trying to design the whole thing up front. Mecanum wheels were the first real upgrade past "it drives"; sensors, a head swivel, and eventually some semi-autonomous behavior (obstacle avoidance, maybe line-following) are the next things on the list as I pick up the hardware for them.
+
+This is the first hardware node of the **Robotics Platform** (see the platform README at the repository root). This README covers the robot itself: hardware, wiring, network protocol, and firmware. The ROS 2 control side (gamepad teleop, the UDP bridge, Foxglove) is documented in the platform README.
 
 Design is loosely inspired by the classic Arduino/ESP32 obstacle-avoiding and line-tracking smartcar chassis builds, reworked around an ESP32 as the main controller and a 4-motor, dual-driver layout instead of a single H-bridge.
 
@@ -15,11 +17,12 @@ Design is loosely inspired by the classic Arduino/ESP32 obstacle-avoiding and li
 | ESP32 main controller | Flashed, Wi-Fi connected |
 | ESP32 firmware (this directory) | Working: UDP motor control, OTA, failsafe stop |
 | Control link from a host (UDP) | Working, driven from a Steam Deck via ROS 2 (see platform README) |
-| Head swivel (pan servo) | Not connected |
-| Ultrasonic sensors ("eyes") | Not connected |
-| IR line/obstacle sensors | Not connected |
+| Mecanum wheels (X-pattern) | Installed, strafing confirmed working via the ROS 2 control node |
+| Head swivel (pan servo) | Not connected yet - next planned upgrade |
+| Ultrasonic sensors ("eyes") | Not connected yet |
+| IR line/obstacle sensors | Not connected yet |
 
-The rover drives but has no onboard sensing yet. Obstacle avoidance, line tracking, and the head/camera swivel from the original inspiration build are all still on the bench.
+The rover drives, including sideways strafing, but has no onboard sensing yet. Obstacle avoidance, line tracking, and the head/camera swivel from the original inspiration build are all still on the bench, waiting on parts and time. Semi-autonomous behavior is the long-term goal once there's something onboard to sense the world with.
 
 ---
 
@@ -27,8 +30,10 @@ The rover drives but has no onboard sensing yet. Obstacle avoidance, line tracki
 
 - **Controller:** ESP32 (Wi-Fi enabled, replacing the Arduino Uno used in similar builds)
 - **Motor drivers:** 2x L298N Dual H-Bridge
-- **Drive:** 4x DC gear motors, independent front/rear left/right control
+- **Drive:** 4x TT gear motors with mecanum wheels (X-pattern rollers), independent front/rear left/right control
 - **Not yet installed:** pan servo (head swivel), HC-SR04 ultrasonic sensors, IR sensors
+
+The rover started with plain wheels and was upgraded to a mecanum kit (4x mecanum wheels + 4x TT motors) once that fit the budget. That upgrade only changed what's bolted to the motor shafts: the wiring, the firmware, and the UDP protocol below are unchanged, since each wheel is still just one motor on one GPIO pair. The only thing that changed on the software side was the ROS 2 control logic learning to mix the four wheels for sideways motion instead of always pairing them left/right, documented in the platform README.
 
 ### Motor Wiring
 
@@ -73,7 +78,7 @@ PWM frequency is 5000 Hz at 8-bit resolution (0-255), matching the -255..255 com
 
 ### Talking to the rover
 
-The firmware never runs ROS: it only speaks the UDP protocol above, and anything that can send that string can drive it. A sender should resend at a steady rate (20 Hz works well), since the failsafe stops the motors after 500 ms of silence.
+The firmware never runs ROS: it only speaks the UDP protocol above, and anything that can send that string can drive it. A sender should resend at a steady rate (20 Hz works well), since the failsafe stops the motors after 500 ms of silence. This protocol never changed when the mecanum wheels went on, since each wheel is still commanded as its own independent value; strafing is just a different pattern of the same four numbers.
 
 **Only one sender should transmit at a time.** A second source sending idle stop packets (for example `0,0,0,0` from a test tool) interleaves with the real commands and shows up as motor stutter.
 
@@ -645,7 +650,7 @@ When both environments are targeted at once, PlatformIO reports each separately.
 
 ## Rover Roadmap
 
-Platform-level work (control software, telemetry dashboard, MQTT/home automation, multi-robot support) is tracked in the platform README and roadmap. These items are specific to this robot.
+This is a budget build, so the roadmap is really "what I can afford and get working next," not a fixed schedule. Platform-level work (control software, telemetry dashboard, MQTT/home automation, multi-robot support) is tracked in the platform README and roadmap. These items are specific to this robot.
 
 ### Phase 1: Core Drivetrain (done)
 - [x] Assemble 4WD chassis
@@ -653,18 +658,21 @@ Platform-level work (control software, telemetry dashboard, MQTT/home automation
 - [x] Confirm all four wheels drive independently and correctly
 - [x] ESP32 firmware: Wi-Fi, fallback AP, mDNS, OTA, UDP motor protocol, failsafe stop
 - [x] Stable Wi-Fi control from a host over UDP (Steam Deck via ROS 2)
+- [x] Upgrade to mecanum wheels (X-pattern), strafing confirmed via the ROS 2 control node
 
-### Phase 2: Sensing
+### Phase 2: Sensing (next, as parts arrive)
 - [ ] Connect and calibrate ultrasonic sensor(s) for obstacle detection
 - [ ] Connect IR sensors for line tracking and edge detection
-- [ ] Add wheel encoders (needed for odometry)
+- [ ] Add wheel encoders (needed for real odometry)
 - [ ] Publish sensor data to the control system
 
-### Phase 3: Autonomy Features
-- [ ] Implement obstacle avoidance behavior
-- [ ] Implement line-following mode
+### Phase 3: Semi-Autonomous Features
+- [ ] Basic obstacle avoidance (stop or steer away using the ultrasonic sensor)
+- [ ] Line-following mode
 - [ ] Add head swivel (pan servo) for sensor sweep and camera aiming
 - [ ] Optional: onboard camera streaming (ESP32-CAM or similar)
+
+Full autonomy isn't the goal here, at least not yet, the near-term aim is the rover handling a few things on its own (not driving into a wall, following a line) while I'm still the one steering the rest of the time.
 
 ---
 
@@ -694,3 +702,4 @@ firmware/esp32-bot/          (this directory)
   - Never run more than one sender to the ESP32. Competing stop packets read as motor stutter.
   - Wi-Fi modem sleep on the ESP32 causes bursty UDP timing. Leave `WiFi.setSleep(false)` in.
   - Test wiring changes one channel at a time over raw UDP with the rover on blocks. That is how the FL/FR/RL/RR pin order was corrected.
+  - Swapping to mecanum wheels needed zero firmware or wiring changes, only the ROS 2 control logic had to learn the new motion, worth remembering next time a "hardware upgrade" turns out to be software's problem to solve.
